@@ -1,0 +1,102 @@
+---
+title: "Assignment1: Machine Learning"
+author: "Laurie Binge"
+output: html_document
+---
+
+#Overview
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. This project uses the data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal is to predict the manner in which they did the exercise. This is the *classe* variable in the training set. 
+
+##Cleaning
+First, the data are cleaned, removing variable that are NAs and the variables that have near zero variation. The first few variables are excluded, as they seem to be identifiers. Then I make sure that the remaining variables are all numeric, except for the outcome variable, which is a factor variable.
+
+The training data is then split into a random training and testing set, called *training1* and *training2*.
+
+```{r loading1, echo=FALSE, warning=FALSE, message=FALSE,cache=TRUE}
+setwd("C:\\PhD Backups\\METRICS\\Coursera")
+library(kernlab)
+library(caret)
+library(randomForest)
+library(ggplot2)
+```
+
+```{r loading2, echo=TRUE, warning=FALSE, message=FALSE,cache=TRUE}
+#Load data
+pml.training <- read.csv2("pml-training.csv", header=TRUE, sep=",",na.strings = "NA",stringsAsFactors=FALSE)[,-1]
+pml.testing <- read.csv2("pml-testing.csv", header=TRUE, sep=",",na.strings = "NA",stringsAsFactors=FALSE)[,-1]
+
+#Clean the dataset
+miss <- NULL
+for(i in 1:ncol(pml.training)) {
+    miss[i] <- !is.na(pml.training[,i])
+}
+pml.train <- pml.training[,miss]
+pml.train <- pml.train[,7:ncol(pml.train)]
+
+nsv <- nearZeroVar(pml.train,saveMetrics=TRUE)
+pml.train <- pml.train[,!nsv[4]]
+
+for(i in 1:52) {
+  pml.train[,i] <- as.numeric(as.character(pml.train[,i]))
+}
+pml.train[,53] <- factor(pml.train[,53])
+
+#Split into training and testing sets
+set.seed(62433)
+inTrain <- createDataPartition(y=pml.train$classe,p=0.6, list=FALSE)
+training1 <- pml.train[inTrain,]
+training2 <- pml.train[-inTrain,]
+```
+
+##Exploratory Analysis
+Just to see what the relationships look like, I plot a scatterplot of two variables in the training set, coloured by the classe outcome variable.
+
+```{r figure 1, echo=FALSE,cache=TRUE}
+g <- ggplot(training1,aes(x=yaw_belt,y=roll_belt,colour=classe))
+g <- g + geom_point()
+g
+```
+
+#Predictions
+##The Random Forest Model
+The Random Forest model is an extension of bagging on classification/regression trees and is one of the most used/accurate algorithms. It uses bootstrap samples from the training set (with replacement) to grow trees and then uses an average for prediction.
+
+A Random Forest model is estimated using all of the variables. This seems to be a suitable prediction method for the categorical outcome variable, *classe*. The *randomForest* function is used, rather than the *caret* package for speed.
+
+The model provides the following output. The out-of-bag (OOB) error is the mean prediction error on each training sample $x_i$, using only the trees that did not have $x_i$ in their bootstrap sample. The OOB estimate of the error rate is 0.63%
+
+```{r pred, echo=TRUE, warning=FALSE, message=FALSE,cache=TRUE}
+#Prediction with forest
+modelFit <- randomForest(classe ~ ., data=training1, importance=TRUE, ntree=500)
+print(modelFit)
+```
+
+The predictions were tested on the testing set, called *training2*, to test the out-of-sample error rate. The accuracy is quite high, at 0.99, with few misclassifications, as illustrated in Figure 2. This provides confidence that the model has would provide relatively accurate results in the final testing set (i.e. the validation set).
+
+```{r confuse, echo=TRUE, warning=FALSE, message=FALSE,cache=TRUE}
+pred <- predict(modelFit,newdata=training2)
+confusionMatrix(pred,training2$classe)
+```
+
+```{r figure 2, echo=FALSE,cache=TRUE}
+training2$predRight <- pred==training2$classe
+g <- ggplot(training2,aes(x=yaw_belt,y=roll_belt,colour=predRight))
+g <- g + geom_point()
+g
+```
+
+##Alternative Models
+In addition, a linear discriminant model was used to try to improve the model. The accuracy of the *lda* model was relatively low, probably because this is more suited to linear relationships. A combined prediction from these two models, did not improve significantly on the random forest predictions. 
+
+```{r alter, echo=TRUE, warning=FALSE, message=FALSE,cache=TRUE}
+train_control<- trainControl(method="boot", p=0.6)
+modelFit1 <- train(classe~., data=training1, method="lda", trControl=train_control)
+pred1 <- predict(modelFit1,newdata=training2)
+confusionMatrix(pred1,training2$classe)
+```
+
+#Conclusion
+The Random Forest model provided a high degree of accuracy when compared to the testing set (*training2*). This is confirmed when the model was used to predict the 20 different test cases in the testing set (i.e. the validation set) as part of the assignment.
+
+
+
